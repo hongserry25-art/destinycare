@@ -15,8 +15,10 @@ const SYSTEM_INSTRUCTION = `
 `;
 
 export const generateSajuContent = async (name: string, birthDate: string, gender: string, rawData: string): Promise<{ chapters: Chapter[] }> => {
+  // process.env.API_KEY를 직접 사용
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key missing");
+  
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `
@@ -63,7 +65,10 @@ export const generateSajuContent = async (name: string, birthDate: string, gende
       }
     });
 
-    const parsed = JSON.parse(response.text.trim());
+    const text = response.text; // .text property 사용
+    if (!text) throw new Error("Empty response from AI");
+    
+    const parsed = JSON.parse(text.trim());
     const merged = DEFAULT_CHAPTERS.map(def => ({ 
       ...def, 
       content: (parsed.chapters || []).find((g: any) => g.id === def.id)?.content || "분석 데이터를 생성할 수 없습니다.", 
