@@ -3,15 +3,10 @@ import React from 'react';
 
 export const MountainGraphic: React.FC<{ className?: string }> = ({ className }) => (
   <div className={`absolute bottom-0 left-0 right-0 h-64 w-full overflow-hidden pointer-events-none ${className}`}>
-    {/* Distant Mountains */}
     <div className="absolute bottom-[-20px] left-[-15%] w-[60%] h-48 rounded-[100%] bg-[#A89F8E] opacity-30 blur-sm" />
     <div className="absolute bottom-[-30px] right-[-10%] w-[55%] h-56 rounded-[100%] bg-[#9AAB94] opacity-30 blur-sm" />
-    
-    {/* Middle Mountains */}
     <div className="absolute bottom-[-40px] left-[10%] w-[45%] h-52 rounded-[100%] bg-[#8B7E66] opacity-60" />
     <div className="absolute bottom-[-20px] right-[5%] w-[50%] h-44 rounded-[100%] bg-[#7C8C74] opacity-60" />
-    
-    {/* Foreground Hills */}
     <div className="absolute bottom-[-50px] left-[25%] w-[50%] h-48 rounded-[100%] bg-[#5D5443] opacity-80" />
   </div>
 );
@@ -22,13 +17,39 @@ export const CloudPattern: React.FC<{ className?: string }> = ({ className }) =>
   </svg>
 );
 
-export const LogoStamp: React.FC = () => (
-  <div className="relative w-40 h-40 mx-auto flex items-center justify-center mb-8">
-    <div className="border-[6px] border-[#D4AF37] w-32 h-32 flex items-center justify-center transform rotate-0 bg-white shadow-xl z-10">
-      <span className="text-7xl font-serif font-bold text-[#D4AF37]">命</span>
+export const PremiumLogo: React.FC = () => (
+  <div className="flex flex-col items-center gap-2">
+    <span className="text-white opacity-60 text-[10px] tracking-[0.4em] mb-4">운명케어연구소</span>
+    <div className="relative w-24 h-24 flex items-center justify-center">
+      {/* Hanok Roof Pattern */}
+      <svg className="absolute -top-6 w-28 h-10" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 30 C10 30, 20 10, 50 10 C80 10, 90 30, 90 30 L95 35 L85 30 L50 20 L15 30 L5 35 L10 30Z" fill="#D4AF37" />
+        <path d="M45 5 L55 5 L50 0 L45 5Z" fill="#D4AF37" />
+      </svg>
+      {/* Square Border */}
+      <div className="border-[2px] border-[#D4AF37] w-20 h-20 flex items-center justify-center relative overflow-hidden">
+         <span className="text-5xl font-serif font-bold text-[#D4AF37] relative z-10">命</span>
+      </div>
     </div>
-    <div className="absolute top-0 left-0 w-full h-full border border-[#D4AF37]/20 rounded-full animate-pulse" />
+    <span className="text-[#D4AF37] text-[10px] tracking-[0.4em] mt-2">운명케어연구소</span>
   </div>
+);
+
+export const HummingBirdGraphic: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M50 80 Q70 60, 90 85 T130 90 Q150 95, 170 105 L160 110 Q140 100, 120 105 T80 115 Z" fill="#D4AF37" fillOpacity="0.4" />
+    <path d="M40 85 L20 100 L45 105 L40 85Z" fill="#D4AF37" fillOpacity="0.6" />
+    <path d="M90 85 C90 85, 70 40, 50 50 C40 55, 60 75, 75 75 Z" fill="#D4AF37" fillOpacity="0.5" />
+    <path d="M100 90 C100 90, 110 50, 130 60 C140 65, 120 85, 110 85 Z" fill="#D4AF37" fillOpacity="0.5" />
+  </svg>
+);
+
+export const LeafDecoration: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Removed line/tick paths that looked like scratches per user request */}
+    <circle cx="160" cy="180" r="60" fill="#D4AF37" fillOpacity="0.15" className="blur-3xl" />
+    <circle cx="100" cy="150" r="40" fill="#D4AF37" fillOpacity="0.1" className="blur-2xl" />
+  </svg>
 );
 
 export const RedStamp: React.FC<{ className?: string }> = ({ className }) => (

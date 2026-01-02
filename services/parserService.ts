@@ -9,11 +9,22 @@ const ELEMENT_MAP: Record<string, string> = {
   '壬': 'water', '癸': 'water', '亥': 'water', '子': 'water', '水': 'water', '물': 'water'
 };
 
-const YIN_YANG_MAP: Record<string, string> = {
-  '甲': 'yang', '丙': 'yang', '戊': 'yang', '庚': 'yang', '壬': 'yang',
-  '寅': 'yang', '辰': 'yang', '午': 'yang', '申': 'yang', '戌': 'yang',
-  '乙': 'yin', '丁': 'yin', '己': 'yin', '辛': 'yin', '癸': 'yin',
-  '卯': 'yin', '巳': 'yin', '未': 'yin', '酉': 'yin', '亥': 'yin', '子': 'yin', '丑': 'yin'
+const HEADERS = ['구분', '시주', '일주', '월주', '년주', '용신', '희신', '기신', '구신', '한신'];
+
+/**
+ * 텍스트에서 특정 라벨을 포함하는 데이터 행을 추출합니다.
+ */
+const extractDataRow = (label: string, lines: string[]): string[] => {
+  for (const line of lines) {
+    if (line.includes(label)) {
+      const parts = line.replace(label, '').trim().split(/\s+/).filter(v => v.length > 0);
+      const isHeaderOnly = parts.length > 0 && parts.every(p => HEADERS.includes(p));
+      if (!isHeaderOnly && parts.length > 0) {
+        return parts;
+      }
+    }
+  }
+  return [];
 };
 
 export const parseSajuText = (text: string): { name: string, gender: 'male' | 'female', chartData: ChartData } => {
@@ -31,8 +42,8 @@ export const parseSajuText = (text: string): { name: string, gender: 'male' | 'f
     year: { tenGod: '-', stem: '-', branch: '-', branchTenGod: '-', lifeStage: '-', symbolicStars: '-' }
   };
 
-  // 1. 기본 정보 추출 (이름, 성별, 날짜)
-  const nameMatch = text.match(/([가-힣a-zA-Z]+)\s*\((여|남|坤|乾)\)/);
+  // 1. 기본 정보 추출
+  const nameMatch = text.match(/([가-힣a-zA-Z0-9]+)\s*\((여|남|坤|乾)\)/);
   if (nameMatch) {
     name = nameMatch[1];
     gender = (nameMatch[2] === '여' || nameMatch[2] === '坤') ? 'female' : 'male';
@@ -44,25 +55,15 @@ export const parseSajuText = (text: string): { name: string, gender: 'male' | 'f
   const lunarMatch = text.match(/음력\s*(\d{4}년\s*\d{1,2}월\s*\d{1,2}일)/);
   if (lunarMatch) lunarDate = lunarMatch[1];
 
-  // 2. 사주 그리드 추출
-  // 형식: "레이블 값 값 값 값" 구조를 찾음
-  const extractRow = (label: string): string[] => {
-    const line = lines.find(l => l.startsWith(label) || l.includes(label));
-    if (!line) return [];
-    // 레이블 제거 후 공백으로 분리
-    const values = line.replace(label, '').trim().split(/\s+/).filter(v => v.length > 0);
-    return values;
-  };
-
-  const mapPillars = (values: string[], field: keyof PillarData) => {
+  // 2. 사주 원국 데이터 추출
+  const mapPillars = (label: string, field: keyof PillarData) => {
+    const values = extractDataRow(label, lines);
     if (values.length >= 4) {
-      // 일반적인 만세력 텍스트는 시-일-월-년 순서임
       pillars.hour[field] = values[0];
       pillars.day[field] = values[1];
       pillars.month[field] = values[2];
       pillars.year[field] = values[3];
     } else if (values.length === 3 && field === 'tenGod') {
-      // 일간은 보통 생략됨 (일간(나) 형태)
       pillars.hour[field] = values[0];
       pillars.day[field] = '일간(나)';
       pillars.month[field] = values[1];
@@ -70,72 +71,78 @@ export const parseSajuText = (text: string): { name: string, gender: 'male' | 'f
     }
   };
 
-  mapPillars(extractRow('천간'), 'stem');
-  mapPillars(extractRow('지지'), 'branch');
-  mapPillars(extractRow('십성'), 'tenGod');
+  mapPillars('천간', 'stem');
+  mapPillars('지지', 'branch');
+  mapPillars('십성', 'tenGod');
   
-  // 지지십성(십성(지지)) 처리
-  const branchTenGods = extractRow('십성(지지)') || extractRow('지지십성');
-  if (branchTenGods.length > 0) mapPillars(branchTenGods, 'branchTenGod');
+  const branchTenGods = extractDataRow('십성(지지)', lines).length > 0 
+    ? extractDataRow('십성(지지)', lines) 
+    : extractDataRow('지지십성', lines);
+  if (branchTenGods.length >= 4) {
+    pillars.hour.branchTenGod = branchTenGods[0];
+    pillars.day.branchTenGod = branchTenGods[1];
+    pillars.month.branchTenGod = branchTenGods[2];
+    pillars.year.branchTenGod = branchTenGods[3];
+  }
 
-  mapPillars(extractRow('운성'), 'lifeStage');
-  mapPillars(extractRow('신살'), 'symbolicStars');
+  mapPillars('운성', 'lifeStage');
+  mapPillars('신살', 'symbolicStars');
 
-  // 3. 용신 분석 데이터 추출
+  // 3. 용신 분석
   const usefulGods = { yong: '?', hui: '?', gi: '?', gu: '?', han: '?' };
-  const yongRow = lines.find(l => l.includes('오행') && (l.includes('火') || l.includes('水') || l.includes('木')));
+  const yongRow = lines.find(l => l.includes('오행') && /[木火土金金水]/.test(l));
   if (yongRow) {
-    const vals = yongRow.replace('오행', '').trim().split(/\s+/);
+    const vals = yongRow.replace('오행', '').trim().split(/\s+/).filter(v => v.length > 0);
     if (vals.length >= 5) {
       usefulGods.yong = vals[0]; usefulGods.hui = vals[1]; usefulGods.gi = vals[2]; usefulGods.gu = vals[3]; usefulGods.han = vals[4];
     }
   }
 
-  // 4. 오행 개수 직접 추출 (텍스트 하단에 "木 나무 0% 0개" 형태가 있는 경우)
+  // 4. 오행 분포 분석 (한국어 라벨 대응을 위해 정규표현식 수정)
   const elements = { wood: 0, fire: 0, earth: 0, metal: 0, water: 0 };
   lines.forEach(line => {
-    const elMatch = line.match(/(木|火|土|金|金|水)\s+\w+\s+\d+%\s+(\d+)개/);
+    // [Hanja] [KoreanName] [Percent]% [Count]개 형식을 매칭
+    const elMatch = line.match(/(木|火|土|金|金|水)\s+[가-힣]+\s+([\d.]+)%\s+(\d+)개/);
     if (elMatch) {
       const key = ELEMENT_MAP[elMatch[1]];
-      if (key) (elements as any)[key] = parseInt(elMatch[2], 10);
+      if (key) (elements as any)[key] = parseInt(elMatch[3], 10);
     }
   });
 
-  // 5. 십신 분포 개수 추출
+  // 5. 십성 분포 분석
   const tenGodCounts: Record<string, number> = { bigeop: 0, siksang: 0, jaeseong: 0, gwanseong: 0, inseong: 0 };
   lines.forEach(line => {
-    if (line.includes('비겁')) tenGodCounts.bigeop = parseInt(line.match(/(\d+)개/)?.[1] || '0', 10);
-    if (line.includes('식상')) tenGodCounts.siksang = parseInt(line.match(/(\d+)개/)?.[1] || '0', 10);
-    if (line.includes('재성')) tenGodCounts.jaeseong = parseInt(line.match(/(\d+)개/)?.[1] || '0', 10);
-    if (line.includes('관성')) tenGodCounts.gwanseong = parseInt(line.match(/(\d+)개/)?.[1] || '0', 10);
-    if (line.includes('인성')) tenGodCounts.inseong = parseInt(line.match(/(\d+)개/)?.[1] || '0', 10);
+    const countMatch = line.match(/(\d+)개/);
+    if (countMatch) {
+      const count = parseInt(countMatch[1], 10);
+      if (line.includes('비겁')) tenGodCounts.bigeop = count;
+      else if (line.includes('식상')) tenGodCounts.siksang = count;
+      else if (line.includes('재성')) tenGodCounts.jaeseong = count;
+      else if (line.includes('관성')) tenGodCounts.gwanseong = count;
+      else if (line.includes('인성')) tenGodCounts.inseong = count;
+    }
   });
 
-  // 데이터 보완 (텍스트에 개수 정보가 없으면 원국표 기반 계산)
-  const pillarList = [pillars.hour, pillars.day, pillars.month, pillars.year];
-  const totalElements = Object.values(elements).reduce((a, b) => a + b, 0);
-  
+  const totalElements = Object.values(elements).reduce((a, b) => a + b, 0) || 8;
   const finalEnergy: EnergyBalance = {
-    yang: { count: 0, percent: 0 }, // 텍스트에서 추출이 어려우면 0으로 둠
-    yin: { count: 0, percent: 0 },
+    yang: { count: 0, percent: 50 },
+    yin: { count: 0, percent: 50 },
     elements: {
-      wood: { count: elements.wood, percent: Math.round((elements.wood / (totalElements || 8)) * 100) },
-      fire: { count: elements.fire, percent: Math.round((elements.fire / (totalElements || 8)) * 100) },
-      earth: { count: elements.earth, percent: Math.round((elements.earth / (totalElements || 8)) * 100) },
-      metal: { count: elements.metal, percent: Math.round((elements.metal / (totalElements || 8)) * 100) },
-      water: { count: elements.water, percent: Math.round((elements.water / (totalElements || 8)) * 100) },
+      wood: { count: elements.wood, percent: Math.round((elements.wood / totalElements) * 100) },
+      fire: { count: elements.fire, percent: Math.round((elements.fire / totalElements) * 100) },
+      earth: { count: elements.earth, percent: Math.round((elements.earth / totalElements) * 100) },
+      metal: { count: elements.metal, percent: Math.round((elements.metal / totalElements) * 100) },
+      water: { count: elements.water, percent: Math.round((elements.water / totalElements) * 100) },
     }
   };
 
-  // 음양 조화 텍스트 추출 (예: "陰 음 8개 (100%)")
-  const yinMatch = text.match(/陰\s+\w+\s+(\d+)개\s+\((\d+)%\)/);
-  const yangMatch = text.match(/陽\s+\w+\s+(\d+)개\s+\((\d+)%\)/);
-  if (yinMatch) {
-    finalEnergy.yin = { count: parseInt(yinMatch[1]), percent: parseInt(yinMatch[2]) };
-  }
-  if (yangMatch) {
-    finalEnergy.yang = { count: parseInt(yangMatch[1]), percent: parseInt(yangMatch[2]) };
-  }
+  // 6. 음양 분석 (다양한 공백 및 문자 대응)
+  lines.forEach(line => {
+    const yinMatch = line.match(/(陰|음)\s+[가-힣]*\s*(\d+)개\s*\((\d+)%\)/);
+    const yangMatch = line.match(/(陽|양)\s+[가-힣]*\s*(\d+)개\s*\((\d+)%\)/);
+    if (yinMatch) finalEnergy.yin = { count: parseInt(yinMatch[2]), percent: parseInt(yinMatch[3]) };
+    if (yangMatch) finalEnergy.yang = { count: parseInt(yangMatch[2]), percent: parseInt(yangMatch[3]) };
+  });
 
   return {
     name, gender,
