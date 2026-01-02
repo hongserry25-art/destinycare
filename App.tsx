@@ -1,135 +1,68 @@
 
 import React, { useState, useMemo } from 'react';
-import { parseSajuText, parseFateFlowOnly } from './services/parserService';
+import { parseSajuText } from './services/parserService';
 import { generateSajuContent } from './services/geminiService';
 import { CoverPage, IntroPage, SajuChartPage, EnergyBalancePage, TenGodsDistributionPage, TableOfContents, SectionTitlePage, ContentPage, FateFlowPage } from './components/BookPages';
-import { Sparkles, Edit2, Loader2, Download, X, Plus, FileText, Trash2, Wand2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, Edit2, Loader2, Download, FileText, Trash2, Wand2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { SajuData, DEFAULT_CHAPTERS, Chapter, FateFlowData } from './types';
+import { SajuData, DEFAULT_CHAPTERS } from './types';
 
 const splitContentIntoPages = (text: string): string[] => {
-  if (!text || !text.trim()) return ["분석 내용을 생성하거나 입력해주세요."];
+  if (!text) return ["데이터를 기다리고 있습니다. 'AI 분석 시작' 버튼을 눌러주세요."];
   const pages: string[] = [];
-  const paragraphs = text.split('\n');
-  const CHARS_PER_LINE = 45;
-  const MAX_LINES_PER_PAGE = 32;
-  let currentPageText: string[] = [];
-  let currentLines = 0;
-
-  paragraphs.forEach((para, idx) => {
-    const paraLines = para.trim().length === 0 ? 1 : Math.ceil(para.length / CHARS_PER_LINE);
-    if (currentLines + paraLines > MAX_LINES_PER_PAGE && currentPageText.length > 0) {
-      pages.push(currentPageText.join('\n'));
-      currentPageText = [para];
-      currentLines = paraLines;
-    } else {
-      currentPageText.push(para);
-      currentLines += paraLines;
-    }
-    if (idx === paragraphs.length - 1) {
-      pages.push(currentPageText.join('\n'));
-    }
-  });
+  const lines = text.split('\n');
+  const MAX_LINES = 28; // 안전한 한 페이지 줄 수
+  for (let i = 0; i < lines.length; i += MAX_LINES) {
+    pages.push(lines.slice(i, i + MAX_LINES).join('\n'));
+  }
   return pages;
 };
 
 const App: React.FC = () => {
   const [manualText, setManualText] = useState('');
-  const [fateFlowText, setFateFlowText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [sajuData, setSajuData] = useState<SajuData>({ name: '', birthDate: '', gender: 'female', chapters: DEFAULT_CHAPTERS });
   const [activeTab, setActiveTab] = useState<'form' | 'preview'>('form');
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // 목차 기반 페이지 번호 계산
   const chapterPageMap = useMemo(() => {
-    let currentPage = 7; 
+    let currentPage = 6; // 차례 이후 첫 페이지
     const map = new Map<number, number>();
-    sajuData.chapters.filter(ch => ch.active !== false).forEach(ch => {
+    sajuData.chapters.filter(ch => ch.active).forEach(ch => {
       map.set(ch.id, currentPage);
-      const pages = splitContentIntoPages(ch.content);
-      const extraPages = 1; 
-      currentPage += (pages.length + extraPages);
-      
-      if (ch.id === 6) {
-        currentPage += 1;
-      }
+      const contentPages = splitContentIntoPages(ch.content).length;
+      currentPage += (contentPages + 1); // 제목페이지 1장 + 내용페이지 N장
     });
     return map;
   }, [sajuData.chapters]);
 
-  const renderBookPages = (data: SajuData, activeChapters: Chapter[]) => {
-    const pages: React.ReactNode[] = [
-      <CoverPage key="cover" data={data} />,
-      <IntroPage key="intro" data={data} />,
-      <TableOfContents key="toc" data={data} pageMap={chapterPageMap} />,
-      <SajuChartPage key="chart" data={data} />,
-      <EnergyBalancePage key="energy" data={data} />,
-      <TenGodsDistributionPage key="tengods" data={data} />,
-    ];
-
-    activeChapters.forEach((ch, idx) => {
-      pages.push(<SectionTitlePage key={`title-${ch.id}`} chapter={ch} index={idx} />);
-      const contentPages = splitContentIntoPages(ch.content);
-      contentPages.forEach((content, pIdx) => {
-        pages.push(
-          <ContentPage 
-            key={`content-${ch.id}-${pIdx}`} 
-            chapter={ch} 
-            data={data} 
-            index={idx} 
-            pageIndex={pIdx} 
-            totalPages={contentPages.length} 
-            contentOverride={content}
-          />
-        );
-      });
-
-      if (ch.id === 6) {
-        pages.push(<FateFlowPage key="fateflow" data={data} />);
-      }
-    });
-
-    return pages;
-  };
-
   const handleManualParse = () => {
-    if (!manualText.trim()) return alert("데이터를 입력해주세요.");
+    if (!manualText.trim()) return alert("만세력 텍스트를 입력해주세요.");
     try {
       const parsed = parseSajuText(manualText);
-      const flowParsed = fateFlowText.trim() ? parseFateFlowOnly(fateFlowText) : parsed.chartData.fateFlow;
-      
-      setSajuData({ 
-        name: parsed.name, 
-        birthDate: parsed.chartData.solarDate, 
-        gender: parsed.gender, 
-        chapters: sajuData.chapters,
-        chartData: {
-          ...parsed.chartData,
-          fateFlow: flowParsed
-        }
-      });
+      setSajuData(prev => ({ 
+        ...prev, 
+        ...parsed, 
+        birthDate: parsed.chartData.solarDate,
+        chapters: DEFAULT_CHAPTERS.map(c => ({...c, content: ""})) // 초기화
+      }));
       setActiveTab('preview');
-    } catch (err) { 
-      alert("데이터 파싱 실패. 형식에 맞게 입력되었는지 확인해주세요."); 
+    } catch (err) {
+      console.error(err);
+      alert("데이터를 읽는 중 오류가 발생했습니다. 텍스트 형식을 확인해주세요.");
     }
   };
 
   const handleAIGenerate = async () => {
-    if (!sajuData.name || !sajuData.chartData) {
-      alert("먼저 사주 기초 데이터를 입력하고 파싱해주세요.");
-      return;
-    }
+    if (!sajuData.chartData) return alert("먼저 '데이터 분석 및 로드'를 진행하세요.");
     setIsGenerating(true);
     try {
-      const result = await generateSajuContent(sajuData.name, sajuData.birthDate, sajuData.gender);
-      setSajuData(prev => ({
-        ...prev,
-        chapters: result.chapters
-      }));
-      alert("AI 심층 분석 리포트 생성이 완료되었습니다!");
+      const result = await generateSajuContent(sajuData.name, sajuData.birthDate, sajuData.gender, manualText);
+      setSajuData(prev => ({ ...prev, chapters: result.chapters }));
     } catch (err) {
-      alert("AI 생성 중 오류가 발생했습니다. API 키 설정을 확인하세요.");
+      alert("AI 서버와 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsGenerating(false);
     }
@@ -140,274 +73,164 @@ const App: React.FC = () => {
     const container = document.getElementById('print-container');
     if (!container) return;
     try {
-      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+      const pdf = new jsPDF('p', 'mm', 'a4');
       const pages = Array.from(container.children);
       for (let i = 0; i < pages.length; i++) {
         const canvas = await html2canvas(pages[i] as HTMLElement, { 
-            scale: 2, useCORS: true, backgroundColor: '#FDFBF7', logging: false,
+          scale: 2, 
+          useCORS: true,
+          logging: false,
+          allowTaint: true
         });
         if (i > 0) pdf.addPage();
-        const imgData = canvas.toDataURL('image/jpeg', 0.85);
-        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 210, 297);
       }
-      pdf.save(`${sajuData.name}_심층사주분석리포트.pdf`);
-    } catch (e) { 
-      alert("저장 중 오류가 발생했습니다."); 
-    } finally { 
-      setIsDownloading(false); 
+      pdf.save(`${sajuData.name}_사주_심층_리포트.pdf`);
+    } catch (e) {
+      alert("PDF 저장 중 오류가 발생했습니다.");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
-  const activeChapters = sajuData.chapters.filter(ch => ch.active !== false);
-
-  const loadSample = () => {
-    const sample = `김지현 (여)
-양력 1992년 5월 15일 14:30
-음력 1992년 4월 13일
-
-구분   시주   일주   월주   년주
-십성   정관   일간   정인   식신
-천간   己     壬     乙     壬
-지지   酉     申     巳     申
-십성   정인   편인   편재   편인
-운성   목욕   장생   절     장생
-신살   문창   천을   망신   천을
-
-용신분석
-용신: 水, 희신: 金, 기신: 土, 구신: 火, 한신: 木
-
-음양오행 분포
-陽 양: 5개 (62%)
-陰 음: 3개 (38%)
-木: 1개 (12%)
-火: 1개 (12%)
-土: 1개 (12%)
-金: 3개 (38%)
-수: 2개 (25%)
-
-십신 분포
-비겁 (비견·겁재): 2개
-식상 (식신·상관): 1개
-재성 (편재·정재): 1개
-관성 (편관·정관): 1개
-인성 (편인·정인): 3개`;
-    
-    const flowSample = `년주
-핵심기운: 천을귀인, 문창귀인
-상세분석: 초년에 학문적 성취가 높고 조상의 덕이 큼
-• 예술적 재능이 일찍 발현되는 시기입니다.
-
-월주
-핵심기운: 망신살, 편재
-상세분석: 사회 활동이 왕성하며 재물에 대한 감각이 발달
-• 부모의 가업을 잇거나 전문직으로 성공할 운입니다.
-
-일주
-핵심기운: 천을귀인, 장생
-상세분석: 일생 동안 귀인의 도움이 따르며 생명력이 강함
-• 배우자 자리에 귀인이 있어 원만한 가정을 이룹니다.
-
-시주
-핵심기운: 정인, 목욕
-상세분석: 말년에 학문과 교육에 종사하거나 명예를 얻음
-• 자녀가 현달하고 본인은 예술적인 말년을 보냅니다.`;
-
-    setManualText(sample);
-    setFateFlowText(flowSample);
-  };
-
-  const updateFateFlow = (pillar: keyof FateFlowData, field: 'mainStars' | 'detailStars', value: string) => {
-    if (!sajuData.chartData?.fateFlow) return;
-    const newFlow = { ...sajuData.chartData.fateFlow };
-    if (field === 'mainStars') {
-        newFlow[pillar].mainStars = value.split(',').map(s => s.trim());
-    } else {
-        newFlow[pillar].detailStars = value.split('\n').map(s => s.trim());
-    }
-    setSajuData({
-        ...sajuData,
-        chartData: {
-            ...sajuData.chartData,
-            fateFlow: newFlow
-        }
-    });
-  };
+  const activeChapters = sajuData.chapters.filter(ch => ch.active);
 
   return (
     <div className="min-h-screen bg-[#F4F1EA] pb-20 font-serif text-[#333]">
-      <nav className="bg-[#2C2C2C] text-[#D4AF37] px-8 py-4 sticky top-0 z-50 flex justify-between items-center shadow-2xl border-b border-[#D4AF37]/30">
+      <nav className="bg-[#1A1A1A] text-[#D4AF37] px-8 py-4 sticky top-0 z-50 flex justify-between items-center shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 border-2 border-[#D4AF37] flex items-center justify-center font-bold text-xl">命</div>
-          <span className="text-xl font-bold tracking-widest uppercase">Destiny Care Labs</span>
+          <span className="font-bold tracking-[0.2em] text-lg">DESTINY CARE LABS</span>
         </div>
         <div className="flex gap-4">
-          <button onClick={() => setActiveTab('form')} className={`px-6 py-2 rounded-full transition-all font-medium ${activeTab === 'form' ? 'bg-[#D4AF37] text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>정보 입력</button>
-          <button onClick={() => setActiveTab('preview')} className={`px-6 py-2 rounded-full transition-all font-medium ${activeTab === 'preview' ? 'bg-[#D4AF37] text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>분석지 미리보기</button>
+          <button onClick={() => setActiveTab('form')} className={`px-6 py-2 rounded-full font-medium transition-all ${activeTab === 'form' ? 'bg-[#D4AF37] text-white' : 'text-gray-400 hover:text-white'}`}>데이터 입력</button>
+          <button onClick={() => setActiveTab('preview')} className={`px-6 py-2 rounded-full font-medium transition-all ${activeTab === 'preview' ? 'bg-[#D4AF37] text-white' : 'text-gray-400 hover:text-white'}`}>미리보기</button>
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto mt-12 px-6">
         {activeTab === 'form' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-            <div className="lg:col-span-8 space-y-8">
-              <div className="bg-white p-10 rounded-2xl shadow-2xl border border-gray-200">
-                <div className="flex justify-between items-end mb-8">
-                  <div>
-                    <h2 className="text-3xl font-bold text-[#1a1a1a] mb-2">기본 사주 데이터 입력</h2>
-                    <p className="text-gray-500 font-sans">분석 소프트웨어에서 추출된 사주 원국 텍스트를 입력하세요.</p>
-                  </div>
-                  <button onClick={loadSample} className="text-[#D4AF37] text-sm font-bold hover:underline flex items-center gap-1">
-                    <FileText size={16} /> 샘플 데이터 불러오기
-                  </button>
-                </div>
-                <textarea 
-                  className="w-full h-[300px] border-2 border-[#F0E6D2] p-8 rounded-xl bg-[#FDFBF7] mb-4 focus:border-[#D4AF37] outline-none transition-all text-lg leading-relaxed shadow-inner" 
-                  value={manualText} 
-                  onChange={(e) => setManualText(e.target.value)} 
-                  placeholder="여기에 사주 분석 텍스트를 입력하세요..." 
-                />
-              </div>
-
-              <div className="bg-white p-10 rounded-2xl shadow-2xl border border-gray-200">
-                <div className="mb-8">
-                  <h2 className="text-3xl font-bold text-[#1a1a1a] mb-2">운명의 흐름 입력 (선택)</h2>
-                  <p className="text-gray-500 font-sans">년/월/일/시주별 핵심 기운과 상세 분석 텍스트를 입력하세요.</p>
-                </div>
-                <textarea 
-                  className="w-full h-[250px] border-2 border-[#F0E6D2] p-8 rounded-xl bg-[#FDFBF7] focus:border-[#D4AF37] outline-none transition-all text-lg leading-relaxed shadow-inner" 
-                  value={fateFlowText} 
-                  onChange={(e) => setFateFlowText(e.target.value)} 
-                  placeholder="예: 년주 핵심: 천을귀인 상세: 초년 성취가 높음..." 
-                />
-                <div className="mt-8 grid grid-cols-2 gap-4">
-                  <button onClick={() => { setManualText(''); setFateFlowText(''); }} className="py-5 rounded-xl font-bold text-gray-400 hover:bg-gray-50 transition flex items-center justify-center gap-2">
-                    <Trash2 size={20} /> 초기화
-                  </button>
-                  <button onClick={handleManualParse} className="bg-[#2C2C2C] text-[#D4AF37] py-5 rounded-xl font-bold text-xl hover:bg-black transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95">
-                    <Sparkles size={24} /> 분석지 데이터 로드
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-4 space-y-6">
-              <div className="bg-[#D4AF37] p-8 rounded-2xl text-white shadow-xl relative overflow-hidden group">
-                <Wand2 className="absolute -right-4 -bottom-4 w-32 h-32 opacity-10 group-hover:scale-110 transition-transform" />
-                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                  <Sparkles size={20} /> AI 심층 분석 엔진
-                </h3>
-                <p className="text-sm opacity-90 leading-relaxed mb-8 font-sans">
-                  입력된 사주 원국을 바탕으로 Gemini AI가 10개 챕터의 상세 리포트를 작성합니다.
-                </p>
-                <button 
-                  onClick={handleAIGenerate}
-                  disabled={isGenerating || !sajuData.chartData}
-                  className="w-full py-4 bg-white text-[#D4AF37] rounded-xl font-bold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {isGenerating ? <Loader2 className="animate-spin" /> : "AI 리포트 생성"}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+            <div className="lg:col-span-8 bg-white p-10 rounded-3xl shadow-2xl border border-gray-100">
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                <FileText className="text-[#D4AF37]" /> 만세력 텍스트 입력
+              </h2>
+              <textarea 
+                className="w-full h-96 border-2 border-[#F0E6D2] p-8 rounded-2xl bg-[#FDFBF7] mb-6 focus:border-[#D4AF37] outline-none transition-all text-lg leading-relaxed shadow-inner" 
+                value={manualText} 
+                onChange={(e) => setManualText(e.target.value)} 
+                placeholder="만세력 앱(예: 천을귀인, 원광만세력 등)의 분석 결과를 복사해서 붙여넣으세요..."
+              />
+              <div className="flex gap-4">
+                <button onClick={handleManualParse} className="flex-1 bg-[#2C2C2C] text-[#D4AF37] py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl hover:bg-black transition-all active:scale-95">
+                  데이터 로드 및 분석 시작
+                </button>
+                <button onClick={() => setManualText('')} className="px-8 py-5 bg-gray-100 text-gray-400 rounded-2xl hover:bg-gray-200 transition-colors">
+                  <Trash2 size={24} />
                 </button>
               </div>
+            </div>
+            <div className="lg:col-span-4 bg-[#D4AF37] p-10 rounded-3xl text-white shadow-2xl flex flex-col justify-between relative overflow-hidden">
+              <Sparkles className="absolute top-[-20px] right-[-20px] w-40 h-40 opacity-10 rotate-12" />
+              <div className="relative z-10">
+                <Wand2 className="mb-6" size={48} />
+                <h3 className="text-2xl font-bold mb-4">AI 전문가 심층 분석</h3>
+                <p className="text-white/80 leading-relaxed mb-8">
+                  단순한 데이터를 넘어, 명리학 대가의 시선으로 당신의 운명을 세밀하게 분석합니다. 10가지 주제별 맞춤 리포트가 생성됩니다.
+                </p>
+              </div>
+              <button 
+                onClick={handleAIGenerate} 
+                disabled={isGenerating || !sajuData.chartData}
+                className="relative z-10 w-full py-5 bg-white text-[#D4AF37] rounded-2xl font-black text-lg hover:shadow-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 active:scale-95"
+              >
+                {isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />} 
+                {isGenerating ? "운명을 분석 중..." : "AI 심층 분석 생성"}
+              </button>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row gap-10">
-            <div className="w-full lg:w-[450px] bg-white rounded-2xl shadow-2xl h-[82vh] overflow-hidden flex flex-col border border-gray-200 sticky top-28">
-              <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
-                <h3 className="font-bold text-lg flex items-center gap-2">
-                  <Edit2 size={18} className="text-[#D4AF37]" /> 리포트 및 흐름 편집
-                </h3>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
-                {/* 운명의 흐름 수동 편집 섹션 */}
-                {sajuData.chartData?.fateFlow && (
-                    <div className="p-5 rounded-xl border-2 bg-red-50/20 border-red-100 shadow-sm mb-4">
-                         <h4 className="font-bold mb-4 text-[#C62828] flex items-center gap-2">
-                             <Sparkles size={16} /> 운명의 흐름 직접 수정
-                         </h4>
-                         {(['year', 'month', 'day', 'hour'] as const).map(p => (
-                             <div key={p} className="mb-6 last:mb-0 border-b border-red-50 pb-4 last:border-0 last:pb-0">
-                                 <div className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-tighter">
-                                     {p === 'year' ? '년주' : p === 'month' ? '월주' : p === 'day' ? '일주' : '시주'}
-                                 </div>
-                                 <div className="space-y-3">
-                                     <div>
-                                        <label className="text-[10px] text-gray-400 mb-1 block">핵심 기운 (쉼표 구분)</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 text-xs border border-gray-200 rounded-md bg-white"
-                                            value={sajuData.chartData?.fateFlow?.[p].mainStars.join(', ')}
-                                            onChange={(e) => updateFateFlow(p, 'mainStars', e.target.value)}
-                                        />
-                                     </div>
-                                     <div>
-                                        <label className="text-[10px] text-gray-400 mb-1 block">상세 분석 (줄바꿈 구분)</label>
-                                        <textarea 
-                                            className="w-full p-2 text-xs border border-gray-200 rounded-md bg-white h-20"
-                                            value={sajuData.chartData?.fateFlow?.[p].detailStars.join('\n')}
-                                            onChange={(e) => updateFateFlow(p, 'detailStars', e.target.value)}
-                                        />
-                                     </div>
-                                 </div>
-                             </div>
-                         ))}
-                    </div>
-                )}
-
-                {/* AI 리포트 편집 섹션 */}
-                {sajuData.chapters.map(ch => (
-                  <div key={ch.id} className={`p-5 rounded-xl border-2 transition-all ${ch.active === false ? 'opacity-40 grayscale' : 'bg-[#FDFBF7] border-[#F0E6D2] shadow-sm'}`}>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-xs font-bold text-[#D4AF37] tracking-wider uppercase">Chapter {ch.id}</span>
-                      <button 
-                        onClick={() => setSajuData(prev => ({ ...prev, chapters: prev.chapters.map(c => c.id === ch.id ? { ...c, active: !c.active } : c) }))}
-                        className="text-gray-400 hover:text-red-500"
-                      >
-                        {ch.active === false ? <Plus size={16} /> : <X size={16} />}
-                      </button>
-                    </div>
-                    <h4 className="font-bold mb-3 text-sm">{ch.title.replace('\n', ' ')}</h4>
-                    <textarea 
-                      className="w-full h-40 text-sm p-3 border border-[#E8DCC4] rounded-lg focus:ring-1 focus:ring-[#D4AF37] outline-none transition-all no-scrollbar bg-white" 
-                      value={ch.content}
-                      onChange={(e) => setSajuData(prev => ({ ...prev, chapters: prev.chapters.map(c => c.id === ch.id ? { ...c, content: e.target.value } : c) }))}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex-1 flex flex-col items-center gap-10">
-              <div className="w-full flex justify-between items-center bg-white px-8 py-5 rounded-2xl shadow-xl border border-gray-100 sticky top-28 z-40">
-                <div className="flex items-center gap-4">
-                  <div className="text-sm">
-                    <span className="text-gray-400 font-sans">대상:</span> <span className="font-bold">{sajuData.name}</span>
-                  </div>
-                  <div className="h-4 w-[1px] bg-gray-200"></div>
-                  <div className="text-sm">
-                    <span className="text-gray-400 font-sans">페이지:</span> <span className="font-bold">{activeChapters.length + 7} P</span>
-                  </div>
+          <div className="flex gap-10">
+            <aside className="w-80 shrink-0 space-y-4">
+              <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 sticky top-28">
+                <h3 className="font-bold mb-6 text-xl border-b pb-4 flex items-center gap-2"><Edit2 size={20} className="text-[#D4AF37]" /> 리포트 구성</h3>
+                <div className="space-y-4 overflow-y-auto max-h-[50vh] pr-2 no-scrollbar">
+                  {sajuData.chapters.map(ch => (
+                    <label key={ch.id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
+                      <input 
+                        type="checkbox" 
+                        checked={ch.active} 
+                        onChange={() => setSajuData({...sajuData, chapters: sajuData.chapters.map(c => c.id === ch.id ? {...c, active: !c.active} : c)})}
+                        className="w-5 h-5 accent-[#D4AF37]"
+                      />
+                      <span className="text-sm font-bold truncate">{ch.title.split('\n')[0]}</span>
+                    </label>
+                  ))}
                 </div>
                 <button 
                   onClick={downloadPDF} 
-                  disabled={isDownloading} 
-                  className="bg-[#2C2C2C] text-[#D4AF37] px-10 py-4 rounded-xl font-bold shadow-2xl flex items-center gap-3 hover:bg-black transition-all active:scale-95 disabled:opacity-50"
+                  disabled={isDownloading || isGenerating}
+                  className="w-full mt-8 py-5 bg-[#2C2C2C] text-[#D4AF37] rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl disabled:opacity-50 hover:bg-black transition-all"
                 >
-                  {isDownloading ? <Loader2 className="animate-spin" /> : <Download size={20} />} 
-                  전문 분석지 PDF 저장
+                  {isDownloading ? <Loader2 className="animate-spin" /> : <Download />} PDF로 평생 소장하기
                 </button>
               </div>
-              
-              <div className="scale-[0.5] sm:scale-[0.6] lg:scale-[0.8] xl:scale-100 origin-top flex flex-col gap-16 items-center pb-40">
-                 {renderBookPages(sajuData, activeChapters)}
+            </aside>
+            <div className="flex-1 flex flex-col items-center">
+              <div className="scale-[0.85] origin-top flex flex-col gap-20 shadow-2xl p-10 bg-gray-200/30 rounded-[40px]">
+                <CoverPage data={sajuData} />
+                <IntroPage data={sajuData} />
+                <TableOfContents data={sajuData} pageMap={chapterPageMap} />
+                <SajuChartPage data={sajuData} />
+                <EnergyBalancePage data={sajuData} />
+                <TenGodsDistributionPage data={sajuData} />
+                {activeChapters.map((ch, idx) => (
+                  <React.Fragment key={ch.id}>
+                    <SectionTitlePage chapter={ch} index={idx} />
+                    {splitContentIntoPages(ch.content).map((content, pIdx) => (
+                      <ContentPage 
+                        key={`${ch.id}-${pIdx}`} 
+                        chapter={ch} 
+                        data={sajuData} 
+                        index={idx} 
+                        pageIndex={pIdx} 
+                        totalPages={splitContentIntoPages(ch.content).length} 
+                        contentOverride={content} 
+                      />
+                    ))}
+                  </React.Fragment>
+                ))}
               </div>
             </div>
           </div>
         )}
-
-        <div id="print-container" className="fixed top-0 left-[-9999px]">
-             {renderBookPages(sajuData, activeChapters)}
-        </div>
       </main>
+
+      {/* 숨겨진 PDF 출력용 컨테이너 */}
+      <div id="print-container" className="fixed left-[-9999px] top-0">
+        <CoverPage data={sajuData} />
+        <IntroPage data={sajuData} />
+        <TableOfContents data={sajuData} pageMap={chapterPageMap} />
+        <SajuChartPage data={sajuData} />
+        <EnergyBalancePage data={sajuData} />
+        <TenGodsDistributionPage data={sajuData} />
+        {activeChapters.map((ch, idx) => (
+          <React.Fragment key={ch.id}>
+            <SectionTitlePage chapter={ch} index={idx} />
+            {splitContentIntoPages(ch.content).map((content, pIdx) => (
+              <ContentPage 
+                key={`${ch.id}-${pIdx}`} 
+                chapter={ch} 
+                data={sajuData} 
+                index={idx} 
+                pageIndex={pIdx} 
+                totalPages={splitContentIntoPages(ch.content).length} 
+                contentOverride={content} 
+              />
+            ))}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 };
