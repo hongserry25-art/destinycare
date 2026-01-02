@@ -15,7 +15,7 @@ const SYSTEM_INSTRUCTION = `
 `;
 
 export const generateSajuContent = async (name: string, birthDate: string, gender: string, rawData: string): Promise<{ chapters: Chapter[] }> => {
-  // process.env.API_KEY를 직접 사용
+  // @types/node를 통해 전역 process.env를 인식합니다.
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key missing");
   
@@ -65,7 +65,7 @@ export const generateSajuContent = async (name: string, birthDate: string, gende
       }
     });
 
-    const text = response.text; // .text property 사용
+    const text = response.text;
     if (!text) throw new Error("Empty response from AI");
     
     const parsed = JSON.parse(text.trim());

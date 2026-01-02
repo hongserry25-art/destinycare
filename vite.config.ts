@@ -2,17 +2,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-declare var process: {
-  env: {
-    VITE_API_KEY?: string;
-    API_KEY?: string;
-    [key: string]: string | undefined;
-  };
-};
-
 export default defineConfig({
   plugins: [react()],
   define: {
+    // 빌드 타임에 환경 변수를 주입합니다.
     'process.env.API_KEY': JSON.stringify(process.env.VITE_API_KEY || process.env.API_KEY)
   },
   server: {
